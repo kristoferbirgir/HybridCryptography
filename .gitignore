@@ -27,6 +27,8 @@ latex-build/
 # C build files
 # =========================
 
+bin/
+certs/
 *.o
 *.so
 *.a
@@ -42,7 +44,6 @@ server
 # Benchmark outputs
 # =========================
 
-*.csv
 *.dat
 *.tmp
 

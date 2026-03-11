@@ -1,177 +1,212 @@
-# Hybrid Cryptography – TLS Performance Analysis
+# Hybrid Cryptography – TLS 1.3 Performance Analysis
 
-This repository contains the implementation and report material for the **Hybrid Cryptography project** in the Applied Cryptography course.
-
-The goal of this project is to investigate how **hybrid cryptography** can be used in practice and to measure the **performance impact of hybrid cryptographic algorithms in TLS 1.3 connections**.
-
-The project combines **research, implementation, and benchmarking**.
+Benchmarking classical vs. hybrid post-quantum key exchange in TLS 1.3, using OpenSSL 3.5 on Ubuntu 24.04.
 
 ---
 
-## Background
+## 1. Compilation and Installation
 
-With the development of **quantum computers**, some classical cryptographic algorithms may become insecure. Algorithms based on problems such as:
+### Prerequisites
 
-- integer factorization (RSA)
-- discrete logarithms (Diffie–Hellman, Elliptic Curve cryptography)
+| Requirement | Version |
+|---|---|
+| Operating system | Ubuntu 24.04.2 LTS |
+| Compiler | GCC (via `build-essential`) |
+| OpenSSL | **3.5.0 or higher** (must be built from source) |
+| Docker (optional) | For development on macOS/Windows |
 
-could potentially be broken by quantum algorithms such as **Shor's algorithm**.
+### Option A: Docker (recommended for macOS/Windows)
 
-To address this threat, **post-quantum cryptographic algorithms** have been developed and standardized. Examples include:
+```bash
+# Build the Docker image (Ubuntu 24.04 + OpenSSL 3.5)
+./docker.sh build
 
-### Key Encapsulation Mechanisms (KEM)
-- ML-KEM (Kyber)
-- HQC
+# Generate TLS test certificates
+./docker.sh gen-certs
 
-### Digital Signature Schemes
-- ML-DSA (Dilithium)
-- SLH-DSA (SPHINCS+)
+# Compile client and server
+./docker.sh make
+```
 
-However, post-quantum cryptography is still relatively new and its long-term security is not yet as well studied as classical cryptography.
+### Option B: Native Ubuntu 24.04
 
-For this reason, organizations such as **ENISA** recommend using **hybrid cryptography**, where classical and post-quantum algorithms are used **together**.
+Ubuntu 24.04 ships OpenSSL 3.0.x which lacks hybrid KEM support. Build 3.5 from source:
 
-In a hybrid construction, security is preserved as long as **at least one of the algorithms remains secure**.
+```bash
+sudo apt update && sudo apt install -y build-essential wget zlib1g-dev
 
----
+cd /tmp
+wget https://github.com/openssl/openssl/releases/download/openssl-3.5.0/openssl-3.5.0.tar.gz
+tar xzf openssl-3.5.0.tar.gz
+cd openssl-3.5.0
+./Configure --prefix=/usr/local --libdir=lib --openssldir=/usr/local/ssl
+make -j$(nproc)
+sudo make install
+echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/openssl.conf
+sudo ldconfig
+```
 
-## Project Objectives
+Verify: `/usr/local/bin/openssl version` should show `OpenSSL 3.5.0`.
 
-The project consists of three main objectives:
+Then compile:
 
-### 1. Investigate Hybrid Cryptography Standards
+```bash
+make                          # produces bin/client and bin/server
+./scripts/gen_certs.sh        # generate test certificates
+```
 
-Study the **ETSI recommendations** on hybrid cryptographic algorithms for:
-
-- digital signatures
-- key encapsulation mechanisms
-
-The report will summarize:
-
-- the types of hybrid constructions described in the ETSI document
-- the advantages and disadvantages of each approach.
-
----
-
-### 2. Analyze EU Cryptographic Recommendations
-
-Investigate **ENISA recommendations** regarding which:
-
-- post-quantum algorithms
-- hybrid algorithms
-- parameter levels
-
-are recommended for use within the European Union.
+The Makefile expects OpenSSL in `/usr/local`. Edit `OPENSSL_DIR` in the Makefile if you installed elsewhere.
 
 ---
 
-### 3. Implement and Benchmark TLS with Hybrid Cryptography
+## 2. Running the Test Cases
 
-Using **OpenSSL (version 3.5 or higher)**, we will implement a simple:
+### Single test run
 
-- TLS client
-- TLS server
+```bash
+# Classical TLS 1.3 (X25519 key exchange)
+./scripts/run_classical.sh
 
-that establish an authenticated **TLS 1.3 connection**.
+# Hybrid TLS 1.3 (X25519 + ML-KEM-768 key exchange)
+./scripts/run_hybrid.sh
+```
 
-Two configurations will be tested:
+With Docker:
 
-1. **Classical TLS**
-   - TLS 1.3 using only classical cryptography
+```bash
+./docker.sh test-classical
+./docker.sh test-hybrid
+```
 
-2. **Hybrid TLS**
-   - TLS 1.3 using both classical and post-quantum key exchange mechanisms
+### Multiple runs
 
-After establishing the TLS connection, the client and server will exchange data.
+```bash
+# 20 consecutive handshakes in one process (more accurate than separate runs)
+./scripts/run_classical.sh 20
+./scripts/run_hybrid.sh 20
+```
+
+### Full benchmark with statistics
+
+```bash
+./scripts/benchmark.sh            # default: 10 runs each
+./scripts/benchmark.sh 50         # custom: 50 runs each
+```
+
+With Docker: `./docker.sh benchmark 50`
+
+The benchmark outputs CSV files and a summary table with mean and standard deviation.
+
+### Network simulation (optional bonus)
+
+Simulate real network conditions (requires root, Linux only):
+
+```bash
+# Add 10ms delay + 100 Mbit/s bandwidth limit on loopback
+sudo ./scripts/net_sim.sh add 10 100
+
+# Run benchmark under simulated conditions
+./scripts/benchmark.sh 20
+
+# Remove simulation
+sudo ./scripts/net_sim.sh remove
+```
 
 ---
 
-## Benchmark Experiments
+## 3. Interpreting the Output
 
-The experiments will measure the impact of hybrid cryptography on:
+### Human-readable output (default)
 
-- **Handshake time** – time required to establish the TLS connection
-- **Data transfer time** – time required to send data after connection establishment
-- **Data transmitted** – total amount of data exchanged during the TLS handshake
+```
+--- Run 1 ---
+  Mode:                   classical
+  Key exchange group:     X25519
+  Cipher:                 TLS_AES_256_GCM_SHA384
+  Handshake time:         1.374 ms
+  Data transfer time:     0.187 ms
+  Handshake bytes sent:   297
+  Handshake bytes recv:   757
+  Handshake bytes total:  1054
+  Application data sent:  4096 bytes
+  Application data recv:  18 bytes
+```
 
-Each experiment will be executed **multiple times** to reduce measurement noise.
+### CSV output (`--csv` flag)
 
-The benchmark will compare **one classical algorithm combination** and **one hybrid algorithm combination**.
+```
+run,mode,group,cipher,handshake_ms,transfer_ms,hs_bytes_sent,hs_bytes_recv,hs_bytes_total,app_bytes_sent,app_bytes_recv
+1,classical,X25519,TLS_AES_256_GCM_SHA384,1.374,0.187,297,757,1054,4096,18
+```
+
+### Benchmark summary
+
+```
+--- classical ---
+  Runs:                   10
+  Handshake time:         1.289 ms  (sd: 0.152 ms)
+  Data transfer time:     0.213 ms  (sd: 0.041 ms)
+  Handshake bytes (avg):  1053
+```
+
+**Key metrics explained:**
+
+| Metric | Description |
+|---|---|
+| **Handshake time** | Wall-clock time for the TLS 1.3 handshake (`SSL_connect`) measured with `CLOCK_MONOTONIC` |
+| **Data transfer time** | Time to send 4096 bytes and receive the server response after the handshake |
+| **Handshake bytes** | Raw TCP bytes exchanged during the handshake, measured via a custom BIO filter |
+| **Key exchange group** | The negotiated group: `X25519` (classical) or `X25519MLKEM768` (hybrid) |
 
 ---
 
-## Implementation Overview
+## 4. Algorithm Configurations
 
-The implementation will consist of:
+| Configuration | Key Exchange | Authentication | TLS Version |
+|---|---|---|---|
+| Classical | X25519 (ECDHE) | ECDSA P-256 | TLS 1.3 |
+| Hybrid | X25519 + ML-KEM-768 | ECDSA P-256 | TLS 1.3 |
 
-- a **TLS client**
-- a **TLS server**
-
-Both programs will run locally using the **Linux loopback interface (127.0.0.1)**.
-
-The programs will use the **OpenSSL library** to establish secure TLS connections.
+Both configurations use the same cipher suite (`TLS_AES_256_GCM_SHA384`) and authentication. The only difference is the key exchange mechanism.
 
 ---
 
-## Repository Structure
+## 5. Project Structure
 
 ```
 HybridCryptography/
-│
-├── README.md
-├── ASSIGNMENT.md
+├── README.md              # This file
+├── ASSIGNMENT.md          # Assignment specification
+├── Makefile               # Build configuration
+├── Dockerfile             # Ubuntu 24.04 + OpenSSL 3.5 image
+├── docker.sh              # Docker helper script
+├── .gitignore
 │
 ├── src/
-│   ├── client.c
-│   ├── server.c
-│   └── common.h
+│   ├── common.h           # Shared constants, timing utilities
+│   ├── client.c           # TLS client with benchmarking (counting BIO)
+│   └── server.c           # TLS server (multi-connection)
 │
 ├── scripts/
-│   ├── build.sh
-│   ├── run_classical.sh
-│   ├── run_hybrid.sh
-│   └── benchmark.sh
+│   ├── gen_certs.sh       # Generate self-signed test certificates
+│   ├── run_classical.sh   # Run classical TLS test
+│   ├── run_hybrid.sh      # Run hybrid TLS test
+│   ├── benchmark.sh       # Full benchmark with CSV + statistics
+│   └── net_sim.sh         # Optional: tc network simulation
+│
+├── certs/                 # Generated certificates (not committed)
 │
 ├── report/
-│   └── report.tex
+│   ├── report.tex         # Project report (LaTeX source)
+│   └── report.pdf         # Compiled report
 │
-└── results/
-    ├── classical/
-    └── hybrid/
+└── results/               # Benchmark CSV output
+    ├── classical.csv
+    └── hybrid.csv
 ```
 
 ---
 
-## Development Plan
+## 6. AI Usage
 
-The project will be implemented in the following stages:
-
-1. Review ETSI and ENISA recommendations.
-2. Implement a basic TLS client/server using OpenSSL.
-3. Establish a TLS 1.3 connection using classical cryptography.
-4. Extend the implementation to support hybrid key exchange.
-5. Implement benchmarking scripts to measure performance.
-6. Run experiments and collect results.
-7. Document findings in the project report.
-
----
-
-## Requirements
-
-The code is intended to run on **Ubuntu 24.04.2 LTS**.
-
-Required dependencies will include:
-
-- OpenSSL 3.5+
-- GCC
-- standard Linux networking libraries
-
-Detailed compilation instructions will be provided as the implementation progresses.
-
----
-
-## AI Usage
-
-Artificial intelligence tools may be used during the development of this project to support learning and experimentation.
-
-Any use of AI for generating code or report content will be clearly documented in accordance with the course guidelines.
+AI tools were used during development to support learning and experimentation. All usage is documented per course guidelines.
