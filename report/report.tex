@@ -1,0 +1,265 @@
+\documentclass[11pt,a4paper]{article}
+
+% ------------------------------------------------
+% Packages
+% ------------------------------------------------
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue,
+    citecolor=blue
+}
+
+% ------------------------------------------------
+% Code formatting
+% ------------------------------------------------
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    columns=fullflexible
+}
+
+% ------------------------------------------------
+% Title
+% ------------------------------------------------
+
+\title{Hybrid Cryptography in TLS 1.3 \\ Performance Analysis}
+\author{
+    Kristofer Birgir \\ 
+    \texttt{<student-id>} \\
+    \and
+    <Teammate Name> \\
+    \texttt{<student-id>}
+}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This project investigates the practical use of hybrid cryptography and evaluates its impact on the performance of TLS~1.3 connections. Hybrid cryptography combines classical and post-quantum cryptographic algorithms in order to maintain security against both classical and quantum adversaries. 
+
+In this report we review ETSI recommendations on hybrid cryptographic constructions and summarize ENISA recommendations for quantum-secure algorithms within the European Union. We then implement a TLS client and server using OpenSSL and benchmark the performance of classical TLS compared with hybrid TLS using post-quantum key encapsulation mechanisms. The experiments measure handshake time, data transfer time, and communication overhead introduced by hybrid cryptography.
+\end{abstract}
+
+% ------------------------------------------------
+\section{Introduction}
+
+The development of quantum computers poses a potential threat to widely deployed cryptographic algorithms such as RSA and elliptic-curve cryptography. Algorithms based on integer factorization and discrete logarithms may be broken by quantum algorithms such as Shor's algorithm.
+
+To address this risk, new cryptographic schemes designed to resist quantum attacks have been standardized. However, because these schemes rely on mathematical assumptions that are not yet as extensively studied as classical cryptographic constructions, organizations such as ENISA recommend the use of \textbf{hybrid cryptography}. 
+
+Hybrid cryptography combines classical and post-quantum algorithms so that security is preserved as long as at least one of the algorithms remains secure.
+
+This project investigates how hybrid cryptography can be applied in practice and evaluates its impact on the performance of TLS~1.3 connections.
+
+% ------------------------------------------------
+\section{Background}
+
+\subsection{Transport Layer Security (TLS)}
+
+Transport Layer Security (TLS) is a widely used protocol for establishing secure communication channels over the Internet. TLS provides:
+
+\begin{itemize}
+\item Confidentiality
+\item Integrity
+\item Authentication
+\end{itemize}
+
+TLS~1.3 performs a cryptographic handshake to establish shared session keys between a client and server.
+
+\subsection{Classical Cryptography}
+
+Traditional TLS deployments rely on classical cryptographic primitives such as:
+
+\begin{itemize}
+\item RSA
+\item Diffie--Hellman
+\item Elliptic Curve Diffie--Hellman (ECDHE)
+\end{itemize}
+
+These primitives rely on mathematical problems believed to be difficult for classical computers.
+
+\subsection{Post-Quantum Cryptography}
+
+Post-quantum cryptography refers to cryptographic algorithms believed to be secure against attacks from quantum computers.
+
+Examples of standardized algorithms include:
+
+\begin{itemize}
+\item ML-KEM (Kyber)
+\item HQC
+\item ML-DSA (Dilithium)
+\item SLH-DSA (SPHINCS+)
+\end{itemize}
+
+\subsection{Hybrid Cryptography}
+
+Hybrid cryptography combines classical and post-quantum algorithms within a single cryptographic protocol. This approach provides security as long as either algorithm remains secure.
+
+% ------------------------------------------------
+\section{ETSI Hybrid Cryptographic Constructions}
+
+The ETSI recommendations describe several approaches to constructing hybrid cryptographic schemes.
+
+In this section we summarize the different hybrid constructions discussed in the ETSI document and analyze their advantages and disadvantages.
+
+\subsection{Hybrid Key Encapsulation Mechanisms}
+
+Describe the different hybrid KEM constructions here.
+
+\subsection{Hybrid Digital Signatures}
+
+Describe hybrid digital signature approaches here.
+
+\subsection{Advantages and Disadvantages}
+
+Discuss the trade-offs between different hybrid constructions.
+
+% ------------------------------------------------
+\section{ENISA Recommendations}
+
+This section summarizes the recommendations provided by ENISA regarding post-quantum cryptography and hybrid deployment strategies within the European Union.
+
+\subsection{Recommended Post-Quantum Algorithms}
+
+Discuss the algorithms recommended by ENISA.
+
+\subsection{Recommended Security Levels}
+
+Describe the recommended parameter sets and security levels.
+
+% ------------------------------------------------
+\section{Implementation}
+
+In order to evaluate the performance impact of hybrid cryptography, we implemented a TLS client and server using the OpenSSL library.
+
+\subsection{Software Environment}
+
+Describe the environment used for the implementation.
+
+Example information to include:
+
+\begin{itemize}
+\item Operating system
+\item OpenSSL version
+\item Compiler version
+\end{itemize}
+
+\subsection{TLS Client and Server}
+
+Explain the design of the client and server programs.
+
+\subsection{Hybrid TLS Configuration}
+
+Explain how hybrid cryptography was enabled in the TLS configuration.
+
+% ------------------------------------------------
+\section{Benchmark Methodology}
+
+The performance of classical and hybrid TLS connections was evaluated using a series of benchmark experiments.
+
+\subsection{Experimental Setup}
+
+Describe:
+
+\begin{itemize}
+\item loopback interface usage
+\item network configuration
+\item benchmark environment
+\end{itemize}
+
+\subsection{Metrics}
+
+The experiments measure the following metrics:
+
+\begin{itemize}
+\item TLS handshake time
+\item data transmission time
+\item total data exchanged during the TLS handshake
+\end{itemize}
+
+\subsection{Measurement Procedure}
+
+Explain how measurements were repeated multiple times to reduce noise.
+
+% ------------------------------------------------
+\section{Results}
+
+Present the benchmark results comparing classical TLS and hybrid TLS.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lccc}
+\toprule
+Configuration & Handshake Time & Data Sent & Transfer Time \\
+\midrule
+Classical TLS & & & \\
+Hybrid TLS & & & \\
+\bottomrule
+\end{tabular}
+\caption{Benchmark comparison between classical and hybrid TLS}
+\end{table}
+
+% ------------------------------------------------
+\section{Discussion}
+
+Discuss the implications of the benchmark results.
+
+Possible topics include:
+
+\begin{itemize}
+\item performance overhead of hybrid cryptography
+\item communication overhead
+\item practical deployment considerations
+\end{itemize}
+
+% ------------------------------------------------
+\section{Conclusion}
+
+Summarize the key findings of the project and reflect on the practicality of hybrid cryptography in TLS deployments.
+
+% ------------------------------------------------
+\section*{Individual Contributions}
+
+\begin{tabular}{ll}
+\toprule
+Student & Contribution \\
+\midrule
+Kristofer Birgir & Implementation, benchmarking \\
+Teammate Name & Literature review, report writing \\
+\bottomrule
+\end{tabular}
+
+% ------------------------------------------------
+\begin{thebibliography}{9}
+
+\bibitem{etsi}
+ETSI. Hybrid Cryptography Recommendations.
+
+\bibitem{enisa}
+ENISA. Agreed Cryptographic Mechanisms.
+
+\bibitem{tls}
+RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3.
+
+\end{thebibliography}
+
+\end{document}
