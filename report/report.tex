@@ -10,6 +10,8 @@
 \usepackage{lmodern}
 \usepackage{microtype}
 
+\usepackage{amsmath}
+\usepackage{amssymb}
 \usepackage{hyperref}
 \usepackage{graphicx}
 \usepackage{booktabs}
@@ -59,7 +61,7 @@
 \begin{abstract}
 This project investigates the practical use of hybrid cryptography and evaluates its impact on the performance of TLS~1.3 connections. Hybrid cryptography combines classical and post-quantum cryptographic algorithms in order to maintain security against both classical and quantum adversaries. 
 
-In this report we review ETSI recommendations on hybrid cryptographic constructions and summarize ENISA recommendations for quantum-secure algorithms within the European Union. We then implement a TLS client and server using OpenSSL and benchmark the performance of classical TLS compared with hybrid TLS using post-quantum key encapsulation mechanisms. The experiments measure handshake time, data transfer time, and communication overhead introduced by hybrid cryptography.
+In this report we review ETSI guidance on hybrid cryptographic constructions and summarize ECCG/ENISA recommendations for quantum-secure algorithms within the European Union. We then implement a TLS client and server using OpenSSL and benchmark the performance of classical TLS compared with hybrid TLS using post-quantum key encapsulation mechanisms. The experiments measure handshake time, data transfer time, and communication overhead introduced by hybrid cryptography.
 \end{abstract}
 
 % ------------------------------------------------
@@ -67,7 +69,7 @@ In this report we review ETSI recommendations on hybrid cryptographic constructi
 
 The development of quantum computers poses a potential threat to widely deployed cryptographic algorithms such as RSA and elliptic-curve cryptography. Algorithms based on integer factorization and discrete logarithms may be broken by quantum algorithms such as Shor's algorithm.
 
-To address this risk, new cryptographic schemes designed to resist quantum attacks have been standardized. However, because these schemes rely on mathematical assumptions that are not yet as extensively studied as classical cryptographic constructions, organizations such as ENISA recommend the use of \textbf{hybrid cryptography}. 
+To address this risk, new cryptographic schemes designed to resist quantum attacks have been standardized. However, because these schemes rely on mathematical assumptions that are not yet as extensively studied as classical cryptographic constructions, organizations such as ECCG and ENISA recommend hybrid deployment during the transition to post-quantum cryptography. 
 
 Hybrid cryptography combines classical and post-quantum algorithms so that security is preserved as long as at least one of the algorithms remains secure.
 
@@ -108,7 +110,7 @@ Examples of standardized algorithms include:
 
 \begin{itemize}
 \item ML-KEM (Kyber)
-\item HQC
+\item FrodoKEM
 \item ML-DSA (Dilithium)
 \item SLH-DSA (SPHINCS+)
 \end{itemize}
@@ -120,124 +122,299 @@ Hybrid cryptography combines classical and post-quantum algorithms within a sing
 % ------------------------------------------------
 \section{ETSI Hybrid Cryptographic Constructions}
 
-The ETSI recommendations describe several approaches to constructing hybrid cryptographic schemes.
-
-In this section we summarize the different hybrid constructions discussed in the ETSI document and analyze their advantages and disadvantages.
+The European Telecommunications Standards Institute (ETSI) has published guidance on how to combine classical and post-quantum cryptographic algorithms in hybrid constructions~\cite{etsi}. The document discusses deployment considerations for achieving quantum resistance while retaining the well-studied security guarantees of classical algorithms during the transition period.
 
 \subsection{Hybrid Key Encapsulation Mechanisms}
 
-Describe the different hybrid KEM constructions here.
+The following constructions summarize the approaches discussed in ETSI TR 103 966 for combining a classical KEM (e.g., ECDH-based) with a post-quantum KEM (e.g., ML-KEM):
+
+\begin{description}[style=nextline]
+    \item[Concatenation Only]
+    Both classical and post-quantum KEMs are executed independently and the resulting shared secrets are concatenated directly:
+    \[
+    K = K_{\text{classical}} \parallel K_{\text{pq}}
+    \]
+    This approach is the simplest to implement but may not provide strong security guarantees against active attacks, as no additional binding between the components is enforced.
+
+    \item[Concatenation with Simple KDF]
+    The concatenated shared secrets are passed through a key derivation function (KDF):
+    \[
+    K = \mathrm{KDF}(K_{\text{classical}} \parallel K_{\text{pq}})
+    \]
+    This improves security over raw concatenation by ensuring the combined key is well-distributed, but still depends on careful design of the KDF inputs.
+
+    \item[Concatenation with Full KDF]
+    A full KDF is used that incorporates additional context such as the ciphertexts exchanged during the protocol:
+    \[
+    K = \mathrm{KDF}(K_{\text{classical}} \parallel K_{\text{pq}} \parallel C_{\text{classical}} \parallel C_{\text{pq}})
+    \]
+    Including ciphertexts strengthens the binding between the two component mechanisms and gives stronger security properties. This approach aligns with the hybrid key exchange constructions described for TLS in ETSI and IETF documents.
+\end{description}
 
 \subsection{Hybrid Digital Signatures}
 
-Describe hybrid digital signature approaches here.
+For digital signatures, ETSI TR 103 966 discusses the following hybrid approaches:
+
+\begin{description}[style=nextline]
+    \item[Concatenation Only (Separable)]
+    Both a classical signature (e.g., ECDSA) and a post-quantum signature (e.g., ML-DSA) are generated independently and concatenated:
+    \[
+    \sigma = \sigma_{\text{classical}} \parallel \sigma_{\text{pq}}
+    \]
+    A verifier checks both signatures separately. This construction is separable, meaning either signature can be stripped and verified on its own.
+
+    \item[Concatenation with Identifiers (Weak Non-Separability)]
+    Each component signs a message that includes algorithm identifiers, binding the construction to the intended algorithms:
+    \[
+    \sigma = (\mathit{ID}_1, \sigma_{\text{classical}}) \parallel (\mathit{ID}_2, \sigma_{\text{pq}})
+    \]
+    This achieves weak non-separability: an attacker cannot easily replace one component with a different algorithm without detection.
+
+    \item[Strong Non-Separability]
+    The signatures are tightly bound such that neither component can be removed or replaced without invalidating the result. This provides the strongest protection against downgrade attacks, where an attacker might strip the post-quantum component to force purely classical verification.
+\end{description}
 
 \subsection{Advantages and Disadvantages}
 
-Discuss the trade-offs between different hybrid constructions.
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{p{3.2cm}p{5cm}p{5cm}}
+\toprule
+\textbf{Approach} & \textbf{Advantages} & \textbf{Disadvantages} \\
+\midrule
+Concat.~Only (KEM) &
+Simplest to implement; no changes to underlying algorithms &
+No binding between components; weaker security guarantees against active attacks \\
+\addlinespace
+Concat.~+ Full KDF &
+Strong security properties; incorporates ciphertexts as context &
+Slightly more complex; KDF design must be carefully specified \\
+\addlinespace
+Separable Signatures &
+Simple; both signatures independently verifiable &
+Large combined size; either signature can be stripped \\
+\addlinespace
+Strongly Non-Separable Signatures &
+Resistant to downgrade and stripping attacks &
+More complex verification logic; not yet widely supported \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of hybrid cryptographic constructions as described in ETSI TR 103 966.}
+\label{tab:etsi-comparison}
+\end{table}
+
+The TLS hybrid key exchange groups defined by the IETF, including X25519MLKEM768 which we use in this project, are consistent with the concatenation with full KDF approach~\cite{hybrid-ietf}. The two key shares are sent independently during the TLS handshake, and the resulting shared secrets are combined using the TLS~1.3 key schedule (HKDF), which acts as the key combiner.
 
 % ------------------------------------------------
-\section{ENISA Recommendations}
+\section{ECCG / ENISA Recommendations}
 
-This section summarizes the recommendations provided by ENISA regarding post-quantum cryptography and hybrid deployment strategies within the European Union.
+The European Union Agency for Cybersecurity (ENISA) publishes the \emph{Agreed Cryptographic Mechanisms} document through the European Cybersecurity Certification Group (ECCG)~\cite{enisa}. This document provides recommendations for cryptographic algorithms and parameter levels that are considered acceptable for use within the EU, including guidance on the transition to quantum-secure cryptography.
 
 \subsection{Recommended Post-Quantum Algorithms}
 
-Discuss the algorithms recommended by ENISA.
+The ECCG document identifies the following post-quantum algorithms as agreed cryptographic mechanisms in the EU:
+
+\subsubsection*{Key Encapsulation Mechanisms}
+
+\begin{itemize}
+    \item \textbf{ML-KEM} (Module-Lattice-Based Key Encapsulation Mechanism, formerly Kyber) -- standardized by NIST in FIPS~203. ML-KEM is based on the hardness of the Module Learning With Errors (MLWE) problem. It is an agreed key encapsulation mechanism, widely adopted and standardized by NIST.
+    \item \textbf{FrodoKEM} -- a lattice-based KEM based on the plain Learning With Errors (LWE) problem. FrodoKEM uses unstructured lattices, which provide more conservative security assumptions than the module lattices used by ML-KEM, at the cost of larger key sizes and ciphertexts.
+\end{itemize}
+
+\subsubsection*{Digital Signature Schemes}
+
+\begin{itemize}
+    \item \textbf{ML-DSA} (Module-Lattice-Based Digital Signature Algorithm, formerly Dilithium) -- standardized in FIPS~204. Based on the MLWE and Module-SIS problems. It is an agreed digital signature scheme, standardized by NIST.
+    \item \textbf{SLH-DSA} (Stateless Hash-Based Digital Signature Algorithm, formerly SPHINCS+) -- standardized in FIPS~205. Based on hash functions only, providing a conservative security assumption. However, signatures are significantly larger than ML-DSA.
+    \item \textbf{XMSS and LMS} -- stateful hash-based signature schemes. These provide strong security guarantees based on hash functions, but require careful state management to avoid key reuse.
+\end{itemize}
+
+The ECCG document distinguishes between algorithms that require hybrid deployment and those that may be used standalone. Lattice-based mechanisms such as ML-KEM and ML-DSA should not be used as standalone solutions for their intended security functionality, but instead combined with classical mechanisms in a hybrid construction. For hash-based signature schemes such as SLH-DSA, XMSS, and LMS, standalone use is acceptable, while hybridization is optional for additional assurance~\cite{enisa}.
 
 \subsection{Recommended Security Levels}
 
-Describe the recommended parameter sets and security levels.
+NIST defines five security levels for post-quantum algorithms. The ECCG document recommends the use of higher parameter sets, as shown in Table~\ref{tab:enisa-levels}.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Algorithm} & \textbf{Recommended Parameters} \\
+\midrule
+ML-KEM  & ML-KEM-768, ML-KEM-1024 \\
+FrodoKEM & FrodoKEM-976, FrodoKEM-1344 \\
+ML-DSA  & ML-DSA-65, ML-DSA-87 \\
+SLH-DSA & Security Level~3 and Level~5 parameter sets \\
+\bottomrule
+\end{tabular}
+\caption{ECCG recommended post-quantum parameter sets.}
+\label{tab:enisa-levels}
+\end{table}
+
+The ECCG recommends the use of higher parameter sets such as ML-KEM-768 or ML-KEM-1024, FrodoKEM-976 or FrodoKEM-1344, and ML-DSA-65 or ML-DSA-87, which correspond to higher security levels.
+
+\subsection{Implications for Our Implementation}
+
+Based on the ECCG recommendations, we selected \textbf{ML-KEM-768} as the post-quantum component for our hybrid TLS implementation. Since ML-KEM is a lattice-based mechanism, the ECCG document requires it to be used in hybrid mode rather than standalone. Combined with X25519, the hybrid group \texttt{X25519MLKEM768} satisfies this requirement. The classical component (X25519) ensures backward compatibility and well-understood security, while ML-KEM-768 provides quantum resistance at one of the recommended parameter levels.
 
 % ------------------------------------------------
 \section{Implementation}
 
-In order to evaluate the performance impact of hybrid cryptography, we implemented a TLS client and server using the OpenSSL library.
+In order to evaluate the performance impact of hybrid cryptography, we implemented a TLS~1.3 client and server in~C using the OpenSSL library.
 
 \subsection{Software Environment}
 
-Describe the environment used for the implementation.
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Version} \\
+\midrule
+Operating system & Ubuntu 24.04.2 LTS \\
+OpenSSL         & 3.5.0 (built from source) \\
+Compiler        & GCC (via \texttt{build-essential}) \\
+Interface       & Linux loopback (127.0.0.1) \\
+\bottomrule
+\end{tabular}
+\caption{Software environment used for the implementation and benchmarks.}
+\label{tab:environment}
+\end{table}
 
-Example information to include:
-
-\begin{itemize}
-\item Operating system
-\item OpenSSL version
-\item Compiler version
-\end{itemize}
+Ubuntu~24.04 ships OpenSSL~3.0.x, which does not support hybrid key exchange groups. We therefore compiled OpenSSL~3.5.0 from source with hybrid KEM support enabled. A Dockerfile is provided in the repository to reproduce the environment.
 
 \subsection{TLS Client and Server}
 
-Explain the design of the client and server programs.
+The \textbf{server} program creates a TCP socket on the loopback interface (port~4433), loads an ECDSA~P-256 self-signed certificate, and accepts TLS~1.3 connections. For each connection, it performs the TLS handshake, reads data sent by the client, sends a short response, and cleanly shuts down the TLS session. The server supports accepting multiple consecutive connections via the \texttt{-n} flag.
 
-\subsection{Hybrid TLS Configuration}
+The \textbf{client} program connects to the server and performs the TLS~1.3 handshake. After the handshake completes, it sends 4096~bytes of application data and reads the server response. The client collects all performance measurements and reports them either in human-readable or CSV format.
 
-Explain how hybrid cryptography was enabled in the TLS configuration.
+\subsection{Measurement Instrumentation}
+
+Three metrics are measured for each TLS session:
+
+\begin{enumerate}
+    \item \textbf{Handshake time:} The wall-clock duration of \texttt{SSL\_connect()}, measured using \texttt{clock\_gettime(CLOCK\_MONOTONIC)}. This captures the full TLS~1.3 handshake including key exchange and authentication.
+
+    \item \textbf{Data transfer time:} The wall-clock time to send 4096~bytes via \texttt{SSL\_write()} and receive the server response via \texttt{SSL\_read()}, measured after the handshake is complete.
+
+    \item \textbf{Handshake bytes:} The total number of TCP bytes exchanged during the handshake. This is measured using a custom \emph{counting BIO filter} that wraps the socket BIO. The filter intercepts all \texttt{BIO\_read()} and \texttt{BIO\_write()} calls and accumulates byte counts, which are reset before each handshake.
+\end{enumerate}
+
+The counting BIO approach measures raw bytes on the wire, including TLS record headers, and provides an accurate picture of the communication overhead introduced by different key exchange mechanisms.
+
+\subsection{TLS Configurations}
+
+Two configurations are tested, differing only in the key exchange group:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{llll}
+\toprule
+\textbf{Configuration} & \textbf{Key Exchange} & \textbf{Authentication} & \textbf{Cipher Suite} \\
+\midrule
+Classical & X25519 (ECDHE) & ECDSA P-256 & TLS\_AES\_256\_GCM\_SHA384 \\
+Hybrid    & X25519MLKEM768 & ECDSA P-256 & TLS\_AES\_256\_GCM\_SHA384 \\
+\bottomrule
+\end{tabular}
+\caption{TLS configurations used in the experiments.}
+\label{tab:configurations}
+\end{table}
+
+The hybrid configuration uses the concatenation-based combiner approach: X25519 and ML-KEM-768 key shares are exchanged independently during the TLS handshake, and OpenSSL's TLS~1.3 key schedule (HKDF) combines the resulting shared secrets. Authentication uses classical ECDSA in both configurations, as hybrid signature schemes are not yet supported in TLS~1.3 by OpenSSL.
 
 % ------------------------------------------------
 \section{Benchmark Methodology}
 
-The performance of classical and hybrid TLS connections was evaluated using a series of benchmark experiments.
-
 \subsection{Experimental Setup}
 
-Describe:
-
-\begin{itemize}
-\item loopback interface usage
-\item network configuration
-\item benchmark environment
-\end{itemize}
+All experiments run on the Linux loopback interface (\texttt{127.0.0.1}), eliminating network variability and isolating the cryptographic performance differences between configurations. The server and client run as separate processes on the same machine inside a Docker container running Ubuntu~24.04.
 
 \subsection{Metrics}
 
-The experiments measure the following metrics:
+Each TLS session produces the following measurements:
 
 \begin{itemize}
-\item TLS handshake time
-\item data transmission time
-\item total data exchanged during the TLS handshake
+    \item \textbf{Handshake time (ms)} -- duration of \texttt{SSL\_connect()}.
+    \item \textbf{Data transfer time (ms)} -- duration of \texttt{SSL\_write()} + \texttt{SSL\_read()} after the handshake.
+    \item \textbf{Handshake bytes sent/received} -- TCP bytes exchanged during the handshake, as counted by the BIO filter.
 \end{itemize}
 
 \subsection{Measurement Procedure}
 
-Explain how measurements were repeated multiple times to reduce noise.
+To reduce noise, each configuration is run $N$ times within a single server--client process pair. The server accepts $N$ consecutive connections and the client connects $N$ times, reusing the same \texttt{SSL\_CTX} (but creating a new \texttt{SSL} session each time). This avoids process startup overhead between runs.
+
+Results are output in CSV format. The benchmark script computes the \textbf{mean} and \textbf{standard deviation} of handshake time, data transfer time, and handshake byte count across all runs for each configuration.
 
 % ------------------------------------------------
 \section{Results}
 
-Present the benchmark results comparing classical TLS and hybrid TLS.
+Table~\ref{tab:results} presents the benchmark results averaged over 10 runs for each configuration.
 
 \begin{table}[h]
 \centering
 \begin{tabular}{lccc}
 \toprule
-Configuration & Handshake Time & Data Sent & Transfer Time \\
+\textbf{Configuration} & \textbf{Handshake Time (ms)} & \textbf{Handshake Bytes} & \textbf{Transfer Time (ms)} \\
 \midrule
-Classical TLS & & & \\
-Hybrid TLS & & & \\
+Classical (X25519)       & 1.42 $\pm$ 0.94 & 1054  & 0.35 $\pm$ 0.42 \\
+Hybrid (X25519MLKEM768)  & 2.55 $\pm$ 0.51 & 3318  & 0.34 $\pm$ 0.10 \\
 \bottomrule
 \end{tabular}
-\caption{Benchmark comparison between classical and hybrid TLS}
+\caption{Benchmark results: mean $\pm$ standard deviation over 10 runs.}
+\label{tab:results}
 \end{table}
+
+\noindent Key observations:
+
+\begin{itemize}
+    \item The hybrid handshake is approximately \textbf{1.8$\times$ slower} than the classical handshake (2.55\,ms vs.\ 1.42\,ms).
+    \item The hybrid handshake exchanges approximately \textbf{3.1$\times$ more bytes} than the classical handshake (3318 vs.\ 1054 bytes). This increase is due to the additional ML-KEM-768 key material exchanged during the handshake, as observed in our measurements.
+    \item \textbf{Data transfer time is unaffected} by the choice of key exchange, as both configurations negotiate the same symmetric cipher suite (TLS\_AES\_256\_GCM\_SHA384). After the handshake, both configurations behave identically.
+\end{itemize}
 
 % ------------------------------------------------
 \section{Discussion}
 
-Discuss the implications of the benchmark results.
+\subsection{Performance Overhead}
 
-Possible topics include:
+The hybrid configuration introduces a measurable increase in handshake time and communication overhead. However, the absolute increase is small: roughly 1\,ms of additional handshake latency and approximately 2.3\,KB of additional data. On modern networks, this overhead is unlikely to be noticeable for most applications.
+
+The handshake time increase comes from two sources: (1)~the additional computation needed for ML-KEM-768 key generation and decapsulation, and (2)~the larger TLS messages that must be transmitted. On the loopback interface, transmission time is negligible, so the measured overhead is primarily computational.
+
+\subsection{Communication Overhead}
+
+The hybrid handshake is larger because additional ML-KEM-768 key material (public key and ciphertext) must be exchanged alongside the X25519 key shares. In networks with low bandwidth or high latency, this additional data could increase handshake time further. The optional network simulation script (\texttt{net\_sim.sh}) using \texttt{tc} can be used to study this effect.
+
+\subsection{Practical Deployment Considerations}
+
+Despite the overhead, hybrid key exchange is practical for real-world deployment:
 
 \begin{itemize}
-\item performance overhead of hybrid cryptography
-\item communication overhead
-\item practical deployment considerations
+    \item Major browsers (Chrome, Firefox) and services (Cloudflare) have already deployed X25519MLKEM768 in production.
+    \item The overhead is a one-time cost per connection; long-lived connections amortize it completely.
+    \item The additional latency is smaller than typical network round-trip times (often 10--100\,ms), making it negligible in practice.
+    \item Using hybrid mode during the transition period follows the ECCG recommendation and provides protection against ``harvest now, decrypt later'' attacks, where an adversary records encrypted traffic today to decrypt it with a future quantum computer.
+\end{itemize}
+
+\subsection{Limitations}
+
+Our experiments have some limitations:
+
+\begin{itemize}
+    \item Benchmarks run on the loopback interface, which eliminates network effects. Real-world performance would include network latency and potential fragmentation of larger handshake messages.
+    \item Only one hybrid combination (X25519MLKEM768) was tested. Other combinations (e.g., with ML-KEM-1024) would show different trade-offs.
+    \item Authentication uses classical ECDSA in both configurations, as hybrid signatures are not yet supported in OpenSSL for TLS. A fully hybrid deployment would also need hybrid authentication.
 \end{itemize}
 
 % ------------------------------------------------
 \section{Conclusion}
 
-Summarize the key findings of the project and reflect on the practicality of hybrid cryptography in TLS deployments.
+This project investigated hybrid cryptography in TLS~1.3 by reviewing ETSI deployment considerations for hybrid constructions and ECCG/ENISA recommendations, and by implementing and benchmarking a hybrid TLS deployment using OpenSSL~3.5.
+
+Our experiments show that hybrid key exchange (X25519MLKEM768) introduces approximately 1.8$\times$ the handshake latency and 3.1$\times$ the handshake data compared to classical key exchange (X25519). However, the absolute overhead is small (approximately 1\,ms and 2.3\,KB), and data transfer after the handshake is unaffected.
+
+These results support the ECCG recommendation to deploy hybrid cryptography during the transition to post-quantum security: the performance cost is modest, while the security benefit --- protection against both classical and quantum adversaries --- is significant.
 
 % ------------------------------------------------
 \section*{Individual Contributions}
@@ -246,8 +423,9 @@ Summarize the key findings of the project and reflect on the practicality of hyb
 \toprule
 Student & Contribution \\
 \midrule
-Kristofer Birgir & Implementation, benchmarking \\
-Teammate Name & Literature review, report writing \\
+Kristofer Birgir Hjörleifsson & Implementation, benchmarking \\
+Brynja Eyfjörð Jónsdóttir & Literature review, report writing \\
+Karítas Ósk Pálmadóttir & Literature review, report writing \\
 \bottomrule
 \end{tabular}
 
@@ -255,13 +433,37 @@ Teammate Name & Literature review, report writing \\
 \begin{thebibliography}{9}
 
 \bibitem{etsi}
-ETSI. Hybrid Cryptography Recommendations.
+ETSI, ``Quantum-Safe Cryptography (QSC); Deployment Considerations for Hybrid Schemes,''
+ETSI TR 103 966 V1.1.1, October 2024.
 
 \bibitem{enisa}
-ENISA. Agreed Cryptographic Mechanisms.
+ECCG, ``Agreed Cryptographic Mechanisms,'' Version~2, European Cybersecurity Certification Group (ECCG), ENISA, 2024.
+\url{https://certification.enisa.europa.eu/document/download/a845662b-aee0-484e-9191-890c4cfa7aaa_en}
 
 \bibitem{tls}
-RFC 8446: The Transport Layer Security (TLS) Protocol Version 1.3.
+E.~Rescorla, ``The Transport Layer Security (TLS) Protocol Version 1.3,''
+RFC~8446, IETF, August 2018.
+\url{https://doi.org/10.17487/RFC8446}
+
+\bibitem{mlkem}
+NIST, ``Module-Lattice-Based Key-Encapsulation Mechanism Standard,''
+FIPS~203, August 2024.
+
+\bibitem{mldsa}
+NIST, ``Module-Lattice-Based Digital Signature Standard,''
+FIPS~204, August 2024.
+
+\bibitem{slhdsa}
+NIST, ``Stateless Hash-Based Digital Signature Standard,''
+FIPS~205, August 2024.
+
+\bibitem{openssl}
+OpenSSL Project, ``OpenSSL 3.5.0 Release,'' April 2025.
+\url{https://www.openssl.org/}
+
+\bibitem{hybrid-ietf}
+D.~Stebila, S.~Fluhrer, and S.~Gueron, ``Hybrid Key Exchange in TLS 1.3,''
+Internet-Draft, IETF, 2024.
 
 \end{thebibliography}
 
